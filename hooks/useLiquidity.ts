@@ -11,6 +11,7 @@ import PoolManagerABI from '@/contracts/abis/PoolManager.json';
 import ERC20ABI from '@/contracts/abis/ERC20.json';
 import { calculateDeadline, sortTokens } from '@/lib/utils';
 import { DEFAULT_TICK_LOWER, DEFAULT_TICK_UPPER, DEFAULT_FEE_TIER } from '@/lib/constants';
+import { analyzePoolABI } from '@/lib/diagnostics';
 
 export function useLiquidity() {
   const { address } = useAccount();
@@ -44,7 +45,7 @@ export function useLiquidity() {
         toast.loading('Waiting for token 0 approval confirmation...', { id: 'approve0' });
         const receipt0 = await tx0.wait();
         console.log('Token0 approved, block:', receipt0.blockNumber);
-        toast.success('Token 0 approved!', { id: 'approve0' });
+        toast.success('Token 0 approved! ✓', { id: 'approve0', duration: Infinity });
         
         // 等待一下确保状态同步
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -64,7 +65,7 @@ export function useLiquidity() {
         toast.loading('Waiting for token 1 approval confirmation...', { id: 'approve1' });
         const receipt1 = await tx1.wait();
         console.log('Token1 approved, block:', receipt1.blockNumber);
-        toast.success('Token 1 approved!', { id: 'approve1' });
+        toast.success('Token 1 approved! ✓', { id: 'approve1', duration: Infinity });
         
         // 等待一下确保状态同步
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -83,7 +84,7 @@ export function useLiquidity() {
         errorMsg = error.message;
       }
       
-      toast.error(errorMsg, { id: 'approve0' });
+      toast.error(errorMsg, { id: 'approve0', duration: 8000 });
       toast.dismiss('approve1');
       return false;
     }
@@ -104,6 +105,32 @@ export function useLiquidity() {
     setIsAdding(true);
 
     try {
+      // 🔍 诊断：检查 Pool ABI 是否完整
+      const abiAnalysis = analyzePoolABI();
+      if (abiAnalysis.missingMint) {
+        console.error('');
+        console.error('╔═══════════════════════════════════════════════════════════╗');
+        console.error('║  ❌ CRITICAL ERROR: Pool ABI is INCOMPLETE!              ║');
+        console.error('╚═══════════════════════════════════════════════════════════╝');
+        console.error('');
+        console.error('The Pool.json file is missing the mint() function and other');
+        console.error('state-changing functions. This is why you\'re getting');
+        console.error('"missing revert data" errors.');
+        console.error('');
+        console.error('SOLUTION:');
+        console.error('1. Get the complete Pool.sol ABI from your contract source');
+        console.error('2. Update lib/Pool.json with the complete ABI');
+        console.error('3. The Pool ABI should include: mint(), burn(), swap(), etc.');
+        console.error('');
+        
+        toast.error(
+          'Pool ABI is incomplete! Check console for details.',
+          { id: 'addLiquidity', duration: 15000 }
+        );
+        setIsAdding(false);
+        return false;
+      }
+      
       const provider = new BrowserProvider(walletClient as any);
       const signer = await provider.getSigner();
 
@@ -361,11 +388,11 @@ export function useLiquidity() {
         token1,
         index: actualPoolIndex,  // ✅ 使用从池子查询或事件中获取的实际 index
         recipient: address,
-        amount0Desired,
-        amount1Desired,
-        amount0Min: (amount0Desired * BigInt(95)) / BigInt(100), // 5% slippage
-        amount1Min: (amount1Desired * BigInt(95)) / BigInt(100),
-        deadline: calculateDeadline(20),
+        amount0Desired: Number(amount0Desired),
+        amount1Desired: Number(amount1Desired),
+        // amount0Min: (amount0Desired * BigInt(95)) / BigInt(100), // 5% slippage
+        // amount1Min: (amount1Desired * BigInt(95)) / BigInt(100),
+        deadline: Number(calculateDeadline(20)),
       };
 
       console.log('Mint params:', params);
@@ -402,8 +429,6 @@ export function useLiquidity() {
           recipient: decoded[0].recipient,
           amount0Desired: decoded[0].amount0Desired.toString(),
           amount1Desired: decoded[0].amount1Desired.toString(),
-          amount0Min: decoded[0].amount0Min.toString(),
-          amount1Min: decoded[0].amount1Min.toString(),
           deadline: decoded[0].deadline.toString()
         });
       } catch (e) {
@@ -521,22 +546,169 @@ export function useLiquidity() {
         return false;
       }
       
+      // 诊断：检查合约配置
+      console.log('=== DIAGNOSTIC: Checking Contract Configuration ===');
+      
+      // 检查 PositionManager 是否有代码（是否正确部署）
+      const positionManagerCode = await provider.getCode(CONTRACT_ADDRESSES.sepolia.positionManager);
+      console.log('PositionManager bytecode length:', positionManagerCode.length);
+      if (positionManagerCode === '0x' || positionManagerCode.length <= 2) {
+        toast.error('PositionManager contract not deployed at the specified address!', { id: 'addLiquidity', duration: 10000 });
+        setIsAdding(false);
+        return false;
+      }
+      
+      // 检查 Pool 的 factory
+      try {
+        const Pool = await import('@/lib/Pool.json');
+        const poolContract = new Contract(poolAddress, Pool.default, provider);
+        const poolFactory = await poolContract.factory();
+        console.log('Pool factory address:', poolFactory);
+        console.log('Expected PoolManager address:', CONTRACT_ADDRESSES.sepolia.poolManager);
+        console.log('Factory matches PoolManager:', poolFactory.toLowerCase() === CONTRACT_ADDRESSES.sepolia.poolManager.toLowerCase());
+        
+        // 如果 factory 不匹配，这可能是问题所在
+        if (poolFactory.toLowerCase() !== CONTRACT_ADDRESSES.sepolia.poolManager.toLowerCase()) {
+          toast.error(
+            `Pool factory mismatch! Pool was created by ${poolFactory} but PoolManager is ${CONTRACT_ADDRESSES.sepolia.poolManager}`,
+            { id: 'addLiquidity', duration: 10000 }
+          );
+          console.error('⚠️ CRITICAL: Pool factory does not match PoolManager!');
+          console.error('This pool may not accept calls from PositionManager');
+          setIsAdding(false);
+          return false;
+        }
+      } catch (factoryError) {
+        console.log('Could not verify pool factory (this might be OK if Pool contract has no factory() method):', factoryError);
+      }
+      
+      // 尝试验证 PositionManager 是否知道 PoolManager
+      try {
+        // PositionManager 应该有一个 poolManager 或类似的 getter
+        const positionManagerContract = new Contract(
+          CONTRACT_ADDRESSES.sepolia.positionManager,
+          PositionManagerABI,
+          provider
+        );
+        
+        // 检查 PositionManager 的 ABI 中是否有 poolManager getter
+        const hasPoolManagerGetter = PositionManagerABI.some((item: any) => 
+          item.type === 'function' && 
+          item.name === 'poolManager' && 
+          item.stateMutability === 'view'
+        );
+        
+        if (hasPoolManagerGetter) {
+          const pmPoolManager = await positionManagerContract.poolManager();
+          console.log('PositionManager.poolManager():', pmPoolManager);
+          console.log('Actual PoolManager:', CONTRACT_ADDRESSES.sepolia.poolManager);
+          
+          if (pmPoolManager.toLowerCase() !== CONTRACT_ADDRESSES.sepolia.poolManager.toLowerCase()) {
+            toast.error(
+              `PositionManager configuration error! It points to ${pmPoolManager} but should point to ${CONTRACT_ADDRESSES.sepolia.poolManager}`,
+              { id: 'addLiquidity', duration: 10000 }
+            );
+            console.error('⚠️ CRITICAL: PositionManager poolManager address mismatch!');
+            setIsAdding(false);
+            return false;
+          }
+        }
+      } catch (pmError) {
+        console.log('Could not verify PositionManager configuration:', pmError);
+      }
+      
+      // 额外检查：尝试直接在 Pool 上计算流动性
+      console.log('=== Testing Liquidity Calculation ===');
+      try {
+        const Pool = await import('@/lib/Pool.json');
+        const poolContract = new Contract(poolAddress, Pool.default, provider);
+        
+        // 从池子获取当前价格
+        const currentSqrtPriceX96 = await poolContract.sqrtPriceX96();
+        const currentLiquidity = await poolContract.liquidity();
+        const poolTickLower = await poolContract.tickLower();
+        const poolTickUpper = await poolContract.tickUpper();
+        
+        console.log('Pool parameters for liquidity calculation:', {
+          sqrtPriceX96: currentSqrtPriceX96.toString(),
+          liquidity: currentLiquidity.toString(),
+          tickLower: poolTickLower.toString(),
+          tickUpper: poolTickUpper.toString(),
+          amount0Desired: amount0Desired.toString(),
+          amount1Desired: amount1Desired.toString()
+        });
+        
+        // 检查价格范围是否有效
+        if (poolTickLower >= poolTickUpper) {
+          console.error('❌ Invalid tick range: tickLower >= tickUpper');
+          toast.error('Pool has invalid tick range configuration', { id: 'addLiquidity', duration: 10000 });
+          setIsAdding(false);
+          return false;
+        }
+        
+        // 检查当前 tick 是否在范围内
+        const currentTick = await poolContract.tick();
+        console.log('Current tick:', currentTick.toString());
+        console.log('Tick in range?', currentTick >= poolTickLower && currentTick <= poolTickUpper);
+        
+      } catch (calcError: any) {
+        console.error('Failed to calculate expected liquidity:', calcError);
+      }
+      
+      // 检查 PositionManager ABI 是否包含必要的函数
+      console.log('=== Checking PositionManager ABI ===');
+      const mintFunction = PositionManagerABI.find((item: any) => 
+        item.type === 'function' && item.name === 'mint'
+      );
+      console.log('mint() function found in ABI:', !!mintFunction);
+      if (mintFunction) {
+        console.log('mint() inputs:', JSON.stringify(mintFunction.inputs, null, 2));
+      }
+      
+      // 最后一次确认：重新检查授权（防止时间过长导致状态变化）
+      console.log('=== Final Allowance Check (right before staticCall) ===');
+      const lastMinuteAllowance0 = await token0Contract.allowance(address, CONTRACT_ADDRESSES.sepolia.positionManager);
+      const lastMinuteAllowance1 = await token1Contract.allowance(address, CONTRACT_ADDRESSES.sepolia.positionManager);
+      console.log('Final token0 allowance:', lastMinuteAllowance0.toString(), 'needed:', amount0Desired.toString());
+      console.log('Final token1 allowance:', lastMinuteAllowance1.toString(), 'needed:', amount1Desired.toString());
+      
+      if (lastMinuteAllowance0 < amount0Desired) {
+        console.error('❌ Token0 allowance insufficient at final check!');
+        toast.error('Token 0 allowance lost. Please try again.', { id: 'addLiquidity', duration: 10000 });
+        setIsAdding(false);
+        return false;
+      }
+      
+      if (lastMinuteAllowance1 < amount1Desired) {
+        console.error('❌ Token1 allowance insufficient at final check!');
+        toast.error('Token 1 allowance lost. Please try again.', { id: 'addLiquidity', duration: 10000 });
+        setIsAdding(false);
+        return false;
+      }
+      
       // 先用 staticCall 模拟执行，获取具体的 revert 原因
-      console.log('Simulating transaction with staticCall...');
+      console.log('=== Simulating transaction with staticCall ===');
       console.log('Transaction will call: PositionManager.mint()');
       console.log('Which will call: Pool.mint()');
       console.log('Which will callback: PositionManager.mintCallback()');
       console.log('Which will transferFrom: User -> Pool');
+      console.log('Full params:', JSON.stringify({
+        token0: params.token0,
+        token1: params.token1,
+        index: params.index.toString(),
+        recipient: params.recipient,
+        amount0Desired: params.amount0Desired.toString(),
+        amount1Desired: params.amount1Desired.toString(),
+        deadline: params.deadline.toString()
+      }, null, 2));
+      // console.log('Encoded call data:', positionManager.interface.encodeFunctionData('mint', [params]));
       
       try {
-        const result = await positionManager.mint.staticCall(params);
+        const result = await positionManager.mint(params);
         console.log('✅ StaticCall result (transaction would succeed):', result);
         console.log('Expected return: positionId, liquidity, amount0, amount1');
       } catch (staticError: any) {
         console.error('❌ StaticCall failed (transaction would revert):', staticError);
-        
-        // 记录错误但不阻止继续尝试
-        console.log('⚠️ StaticCall failed, but we will try sending the transaction anyway to get a better error message');
         
         // 尝试解析 revert 原因
         let revertReason = 'Unknown error';
@@ -561,37 +733,48 @@ export function useLiquidity() {
         
         console.error('Contract would revert with reason:', revertReason);
         
-        // 不要立即返回，让用户有机会尝试真实交易
-        console.warn('⚠️ We will attempt to send the transaction despite staticCall failure');
-        console.warn('⚠️ The wallet may provide more specific error information');
+        // ⚠️ 如果是 "missing revert data"，提供更多帮助信息
+        if (staticError.message?.includes('missing revert data')) {
+          console.error('=== DEBUGGING MISSING REVERT DATA ===');
+          console.error('This usually means:');
+          console.error('1. Pool.mint() is reverting with require() without error message');
+          console.error('2. Pool might be checking msg.sender and rejecting PositionManager');
+          console.error('3. Callback validation is failing');
+          console.error('4. There might be a low-level call failure in the Pool contract');
+          
+          toast.error(
+            'Transaction would fail. This might be a Pool contract configuration issue. Please check if the Pool was created correctly by the PoolManager.',
+            { id: 'addLiquidity', duration: 10000 }
+          );
+          setIsAdding(false);
+          return false;
+        }
         
-        toast.loading('StaticCall failed, attempting real transaction...', { id: 'addLiquidity' });
+        // 其他错误也直接返回，不再尝试发送交易
+        toast.error(`Transaction would fail: ${revertReason}`, { id: 'addLiquidity', duration: 10000 });
+        setIsAdding(false);
+        return false;
       }
       
-      // 尝试估算 Gas
-      let gasEstimate;
+      // ✅ StaticCall 通过，现在发送真实交易
+      toast.loading('Sending transaction...', { id: 'addLiquidity' });
+      
       try {
-        gasEstimate = await positionManager.mint.estimateGas(params);
-        console.log('✅ Gas estimate:', gasEstimate.toString());
-        toast.loading('Sending transaction...', { id: 'addLiquidity' });
-      } catch (gasError: any) {
-        console.error('❌ Gas estimation failed:', gasError);
-        console.warn('⚠️ Will use fixed gas limit and attempt transaction anyway');
-        gasEstimate = 500000n; // 使用固定值
-        toast.loading('Gas estimation failed, trying with fixed limit...', { id: 'addLiquidity' });
-      }
-
-      // 发送交易
-      try {
-        const tx = await positionManager.mint(params, {
-          gasLimit: gasEstimate || 500000n, // 如果 estimateGas 失败，使用较大的固定值
-        });
+        const tx = await positionManager.mint(params);
         
         console.log('Transaction sent:', tx.hash);
         toast.loading('Transaction sent, waiting for confirmation...', { id: 'addLiquidity' });
         
         const receipt = await tx.wait();
         console.log('Transaction confirmed:', receipt);
+        
+        // 关闭 approve 提示
+        toast.dismiss('approve0');
+        toast.dismiss('approve1');
+        
+        toast.success('Liquidity added successfully!', { id: 'addLiquidity' });
+        setIsAdding(false);
+        return true;
       } catch (txError: any) {
         console.error('Transaction failed:', txError);
         console.error('Transaction error details:', {
@@ -620,14 +803,14 @@ export function useLiquidity() {
           }
         }
         
+        // 关闭 approve 提示
+        toast.dismiss('approve0');
+        toast.dismiss('approve1');
+        
         toast.error(specificError, { id: 'addLiquidity', duration: 10000 });
         setIsAdding(false);
         return false;
       }
-
-      toast.success('Liquidity added successfully!', { id: 'addLiquidity' });
-      setIsAdding(false);
-      return true;
     } catch (error: any) {
       console.error('Add liquidity error:', error);
       
@@ -640,6 +823,10 @@ export function useLiquidity() {
       } else if (error.message) {
         errorMessage = error.message;
       }
+      
+      // 关闭 approve 提示
+      toast.dismiss('approve0');
+      toast.dismiss('approve1');
       
       toast.error(errorMessage, { id: 'addLiquidity' });
       setIsAdding(false);

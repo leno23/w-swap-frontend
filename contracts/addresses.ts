@@ -13,7 +13,7 @@ export const TEST_TOKENS = {
       address: '0x4798388e3adE569570Df626040F07DF71135C48E',
       symbol: 'MNA',
       name: 'MetaNode Token A',
-      decimals: 18,w
+      decimals: 18,
     },
     MNTokenB: {
       address: '0x5A4eA3a013D42Cfd1B1609d19f6eA998EeE06D30',
