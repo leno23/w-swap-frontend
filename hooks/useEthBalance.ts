@@ -1,32 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAccount } from 'wagmi';
-import { formatUnits } from 'ethers';
-import { useTokenContract } from './useContract';
+import { formatEther } from 'ethers';
+import { useEthersProvider } from './useContract';
 
-export function useTokenBalance(tokenAddress: string) {
+export function useEthBalance() {
   const { address, isConnected } = useAccount();
   const [balance, setBalance] = useState('0');
   const [loading, setLoading] = useState(false);
-  const tokenContract = useTokenContract(tokenAddress);
+  const provider = useEthersProvider();
 
   const fetchBalance = useCallback(async () => {
-    if (!isConnected || !address || !tokenContract) {
+    if (!isConnected || !address || !provider) {
       setBalance('0');
       return;
     }
 
     try {
       setLoading(true);
-      const bal = await tokenContract.balanceOf(address);
-      const formattedBalance = formatUnits(bal, 18);
+      const bal = await provider.getBalance(address);
+      const formattedBalance = formatEther(bal);
       setBalance(formattedBalance);
     } catch (error) {
-      console.error('Error fetching token balance:', error);
+      console.error('Error fetching ETH balance:', error);
       setBalance('0');
     } finally {
       setLoading(false);
     }
-  }, [isConnected, address, tokenContract, tokenAddress]);
+  }, [isConnected, address, provider]);
 
   useEffect(() => {
     fetchBalance();

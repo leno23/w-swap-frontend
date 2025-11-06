@@ -1,15 +1,14 @@
+import '@ant-design/v5-patch-for-react-19';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import './globals.css';
 import Providers from './providers';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
-
-const inter = Inter({ subsets: ['latin'] });
+import '@rainbow-me/rainbowkit/styles.css';
+import 'antd/dist/reset.css';
+import '../styles/variables.css';
+import '../styles/globals.css';
 
 export const metadata: Metadata = {
   title: 'MetaNodeSwap - Decentralized Exchange',
-  description: 'A Uniswap V3 inspired decentralized exchange',
+  description: 'A modern DEX on Sepolia Testnet',
 };
 
 export default function RootLayout({
@@ -19,18 +18,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body>
         <Providers>
-          <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex flex-col">
-            <Header />
-            <main className="container mx-auto px-4 py-8 flex-1">
-              {children}
-            </main>
-            <Footer />
-          </div>
+          {children}
         </Providers>
       </body>
     </html>
   );
 }
-

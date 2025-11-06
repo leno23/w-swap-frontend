@@ -1,8 +1,6 @@
 "use client";
-import { redirect } from 'next/navigation';
+import Swap from '../components/Swap';
 
-export default function Home() {
-  redirect('/swap');
+export default function HomePage() {
+  return <Swap />;
 }
-
-

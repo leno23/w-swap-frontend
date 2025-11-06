@@ -1,98 +1,206 @@
-# MetaNodeSwap Frontend
+# MetaNodeSwap - Next.js Version
 
-A decentralized exchange (DEX) frontend built with Next.js, inspired by Uniswap V3.
+这是MetaNodeSwap DEX项目的Next.js版本，从原始的Vite + React项目迁移而来。
 
-## Features
+## 🚀 技术栈
 
-- 🔄 Token Swapping
-- 💧 Liquidity Pool Management
-- 📊 Position Management (NFT-based)
-- 🏊 Pool Creation
-- 💼 Wallet Integration (Rainbow Kit)
+- **框架**: Next.js 16 (App Router)
+- **React**: 19.2
+- **Web3**: 
+  - Wagmi 2.19
+  - RainbowKit 2.2
+  - Ethers.js 6.15
+  - Viem 2.38
+- **UI**: Ant Design 5.27
+- **查询**: TanStack Query 5.90
 
-## Tech Stack
+## 📁 项目结构
 
-- **Framework**: Next.js 14
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Web3**: ethers.js, wagmi, RainbowKit
-- **Network**: Sepolia Testnet
+```
+dex-next/
+├── app/                    # Next.js App Router页面
+│   ├── layout.tsx         # 根布局
+│   ├── page.tsx           # 首页 (Swap)
+│   ├── liquidity/         # 流动性页面
+│   └── positions/         # 持仓页面
+├── components/            # React组件
+│   ├── Header.tsx         # 导航栏
+│   ├── Swap.tsx          # Swap组件
+│   ├── Liquidity.tsx     # 流动性组件
+│   ├── Positions.tsx     # 持仓组件
+│   ├── PoolList.tsx      # 池子列表
+│   └── Providers.tsx     # Provider包装器
+├── config/               # 配置文件
+│   ├── abis.ts          # 合约ABI
+│   ├── contracts.ts     # 合约地址
+│   └── wagmi.ts         # Wagmi配置
+├── hooks/               # 自定义Hooks
+│   ├── useContract.ts   # 合约相关Hooks
+│   ├── useTokenBalance.ts
+│   └── useEthBalance.ts
+└── styles/              # 样式文件
+    ├── globals.css      # 全局样式
+    └── variables.css    # CSS变量
 
-## Getting Started
+```
 
-### Prerequisites
+## 🔧 主要改动
 
-- Node.js 18+ and npm/pnpm
-- MetaMask or other Web3 wallet
-- Sepolia testnet ETH
+### 1. 路由系统
+- ✅ 从 `react-router-dom` 迁移到 Next.js App Router
+- ✅ 使用 `useRouter` 和 `usePathname` 替代 `useNavigate` 和 `useLocation`
+- ✅ 使用 `useSearchParams` 传递页面参数
 
-### Installation
+### 2. 组件改造
+- ✅ 所有客户端组件添加 `'use client'` 指令
+- ✅ 使用 Next.js `Link` 组件替代 `react-router-dom` 的 `Link`
+- ✅ 使用 URL 参数替代 React Router 的 state 传递
+
+### 3. SSR适配
+- ✅ Wagmi配置启用 `ssr: true`
+- ✅ 使用 `Suspense` 包装需要 `useSearchParams` 的组件
+- ✅ 配置 Webpack 排除不兼容的包
+
+## 🛠️ 开发指南
+
+### 安装依赖
 
 ```bash
-# Install dependencies
-npm install
-# or
 pnpm install
+```
 
-# Run development server
-npm run dev
-# or
+### 启动开发服务器
+
+```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser.
+访问 [http://localhost:3000](http://localhost:3000)
 
-## Contract Addresses (Sepolia)
+### 构建生产版本
 
-### Test Tokens
-- MNTokenA: `0x4798388e3adE569570Df626040F07DF71135C48E`
-- MNTokenB: `0x5A4eA3a013D42Cfd1B1609d19f6eA998EeE06D30`
-- MNTokenC: `0x86B5df6FF459854ca91318274E47F4eEE245CF28`
-- MNTokenD: `0x7af86B1034AC4C925Ef5C3F637D1092310d83F03`
-
-### Core Contracts
-- PoolManager: `0xddC12b3F9F7C91C79DA7433D8d212FB78d609f7B`
-- PositionManager: `0xbe766Bf20eFfe431829C5d5a2744865974A0B610`
-- SwapRouter: `0xD2c220143F5784b3bD84ae12747d97C8A36CeCB2`
-
-## Project Structure
-
-```
-frontend/
-├── app/                    # Next.js app directory
-│   ├── swap/              # Swap page
-│   ├── pool/              # Pool management
-│   ├── positions/         # Position management
-│   └── layout.tsx         # Root layout
-├── components/            # React components
-├── contracts/             # Contract ABIs and addresses
-├── hooks/                 # Custom React hooks
-├── lib/                   # Utility functions
-└── types/                 # TypeScript types
+```bash
+pnpm build
+pnpm start
 ```
 
-## Usage
+## 🌐 网络配置
 
-### Swap Tokens
-1. Connect your wallet
-2. Select tokens to swap
-3. Enter amount
-4. Review and confirm transaction
+- **网络**: Sepolia Testnet
+- **Chain ID**: 11155111
+- **合约地址**: 见 `config/contracts.ts`
 
-### Add Liquidity
-1. Go to Pool page
-2. Select token pair
-3. Enter amounts for both tokens
-4. Set price range
-5. Confirm and add liquidity
+## 📝 功能特性
 
-### Manage Positions
-1. View your liquidity positions
-2. Collect fees
-3. Remove liquidity
+### ✅ Swap (交易)
+- 代币兑换
+- 实时报价
+- 智能授权检查（避免重复授权）
+- 多费率池选择 (0.05%, 0.30%, 1.00%)
 
-## License
+### ✅ Liquidity (流动性)
+- 添加流动性
+- 创建新池子
+- 多费率支持
+- 池子列表查看
 
-GPL-2.0-or-later
+### ✅ Positions (持仓)
+- 查看所有持仓
+- 收取手续费
+- 移除流动性
 
+## 🔍 关键差异
 
+### URL参数传递示例
+
+**原来 (React Router)**:
+```tsx
+navigate('/liquidity', {
+  state: { token0, token1, feeIndex }
+});
+```
+
+**现在 (Next.js)**:
+```tsx
+const params = new URLSearchParams({
+  token0: pool.token0,
+  token1: pool.token1,
+  feeIndex: pool.index.toString(),
+});
+router.push(`/liquidity?${params.toString()}`);
+```
+
+### 组件使用参数
+
+**原来**:
+```tsx
+const location = useLocation();
+const state = location.state;
+```
+
+**现在**:
+```tsx
+const searchParams = useSearchParams();
+const token0 = searchParams.get('token0');
+```
+
+## 🐛 已知问题
+
+- Next.js 19的React版本可能导致某些依赖出现peer dependency警告，但不影响使用
+- 需要使用 `Suspense` 包装使用 `useSearchParams` 的页面
+
+## 📦 依赖说明
+
+项目使用pnpm作为包管理器。关键依赖:
+- `@rainbow-me/rainbowkit`: 钱包连接UI
+- `wagmi`: React Hooks for Ethereum
+- `ethers`: 以太坊库
+- `antd`: UI组件库
+
+## 🚀 部署
+
+### Cloudflare Pages（推荐）
+
+本项目已配置好 Cloudflare Pages 部署支持。
+
+#### 快速开始
+```bash
+# 安装依赖
+pnpm add -D @cloudflare/next-on-pages wrangler
+
+# 一键部署
+npx wrangler login
+pnpm run deploy
+```
+
+#### ⚠️ 重要：修复 Node.JS Compatibility Error
+
+如果部署后遇到 `Node.JS Compatibility Error`，请查看：
+- 📖 [快速修复指南](./FIX_NODEJS_COMPAT_ERROR.md) - 3 分钟解决
+- 🔧 [完整故障排除](./TROUBLESHOOTING.md) - 所有常见问题
+
+#### 📚 完整部署文档
+- [快速开始](./QUICKSTART_CLOUDFLARE.md) - 最简单的部署方法
+- [完整指南](./CLOUDFLARE_DEPLOY.md) - 详细配置说明
+- [部署检查清单](./DEPLOYMENT_CHECKLIST.md) - 确保不遗漏任何步骤
+
+### 其他平台
+
+也可以部署到：
+- Vercel
+- Netlify
+- 自托管服务器
+
+```bash
+pnpm build
+pnpm start
+```
+
+## 📄 License
+
+MIT
+
+---
+
+**迁移完成时间**: 2025年10月
+**迁移版本**: Next.js 16 + React 19

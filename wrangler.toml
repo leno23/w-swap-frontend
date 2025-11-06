@@ -1,0 +1,5 @@
+name = "dex-next"
+compatibility_date = "2024-10-30"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
